@@ -2,6 +2,8 @@ package com.ecom.ecomwebsite.controller;
 
 import com.ecom.ecomwebsite.service.CartService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,41 +16,41 @@ public class CartController {
         this.cartService = cartService;
     }
 
-    //  Get Cart for a User
+    // ✅ Get Cart for Authenticated User
     @GetMapping
-    public ResponseEntity<?> getCart(@RequestParam String userEmail) {
-        return cartService.getCartByUser(userEmail);
+    public ResponseEntity<?> getCart(@AuthenticationPrincipal UserDetails userDetails) {
+        return cartService.getCart();
     }
 
-    //  Add Product to Cart
+    // ✅ Add Product to Cart
     @PostMapping("/add")
     public ResponseEntity<?> addToCart(
             @RequestParam Long productId,
             @RequestParam int quantity,
-            @RequestParam String userEmail) {
-        return cartService.addToCart(productId, quantity, userEmail);
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return cartService.addToCart(productId, quantity);
     }
 
-    //  Update Quantity of a Product in the Cart
-    @PutMapping("/update")
+    // ✅ Update Cart Item Quantity
+    @PutMapping("/update/{itemId}")
     public ResponseEntity<?> updateCartItem(
-            @RequestParam Long itemId,
+            @PathVariable Long itemId,
             @RequestParam int newQuantity,
-            @RequestParam String userEmail) {
-        return cartService.updateCartItem(itemId, newQuantity, userEmail);
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return cartService.updateCartItem(itemId, newQuantity);
     }
 
-    //  Remove Product from Cart
-    @DeleteMapping("/remove")
+    // ✅ Remove Item from Cart
+    @DeleteMapping("/remove/{itemId}")
     public ResponseEntity<?> removeItemFromCart(
-            @RequestParam Long itemId,
-            @RequestParam String userEmail) {
-        return cartService.removeItemFromCart(itemId, userEmail);
+            @PathVariable Long itemId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return cartService.removeItemFromCart(itemId);
     }
 
-    // Checkout (Clears Cart After Payment)
+    // ✅ Checkout Cart
     @PostMapping("/checkout")
-    public ResponseEntity<String> checkout(@RequestParam String userEmail) {
-        return cartService.checkout(userEmail);
+    public ResponseEntity<String> checkout(@AuthenticationPrincipal UserDetails userDetails) {
+        return cartService.checkout();
     }
 }

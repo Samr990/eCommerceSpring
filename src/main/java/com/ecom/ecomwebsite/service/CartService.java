@@ -5,11 +5,11 @@ import com.ecom.ecomwebsite.dto.CartItemDTO;
 import com.ecom.ecomwebsite.model.*;
 import com.ecom.ecomwebsite.repository.*;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.sql.Date;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -35,7 +35,15 @@ public class CartService {
         this.orderItemRepository = orderItemRepository;
     }
 
-    // Convert Cart to CartDTO
+    // ✅ Get Authenticated User
+    private User getAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String email = authentication.getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found: " + email));
+    }
+
+    // ✅ Convert Cart to DTO
     private CartDTO convertToCartDTO(Cart cart) {
         CartDTO cartDTO = new CartDTO();
         cartDTO.setCartId(cart.getCartId());
@@ -49,7 +57,7 @@ public class CartService {
         return cartDTO;
     }
 
-    // Convert CartItem to CartItemDTO
+    // ✅ Convert CartItem to DTO
     private CartItemDTO convertToCartItemDTO(CartItem cartItem) {
         CartItemDTO dto = new CartItemDTO();
         dto.setItemId(cartItem.getItemId());
@@ -60,50 +68,38 @@ public class CartService {
         return dto;
     }
 
-    // Get User's Cart
-    public ResponseEntity<?> getCartByUser(String userEmail) {
-        Optional<User> user = userRepository.findByEmail(userEmail);
-        if (user.isEmpty()) {
-            return ResponseEntity.status(404).body("User not found: " + userEmail);
-        }
+    // ✅ Get User's Cart
+    public ResponseEntity<?> getCart() {
+        User user = getAuthenticatedUser();
 
-        Cart cart = cartRepository.findByUser(user.get()).orElseGet(() -> {
+        Cart cart = cartRepository.findByUser(user).orElseGet(() -> {
             Cart newCart = new Cart();
-            newCart.setUser(user.get());
+            newCart.setUser(user);
             newCart.setCartTotal(0.0);
             return cartRepository.save(newCart);
         });
-
-        // Recalculate cart total
-        double recalculatedTotal = cartItemRepository.findByCart(cart).stream()
-                .mapToDouble(CartItem::getProductPrice)
-                .sum();
-        cart.setCartTotal(recalculatedTotal);
-        cartRepository.save(cart);
 
         return ResponseEntity.ok(convertToCartDTO(cart));
     }
 
-    // Add Product to Cart
-    public ResponseEntity<?> addToCart(Long productId, int quantity, String userEmail) {
-        Optional<User> user = userRepository.findByEmail(userEmail);
-        Optional<Product> product = productRepository.findById(productId);
+    // ✅ Add Product to Cart
+    public ResponseEntity<?> addToCart(Long productId, int quantity) {
+        User user = getAuthenticatedUser();
+        Optional<Product> productOpt = productRepository.findById(productId);
 
-        if (user.isEmpty()) {
-            return ResponseEntity.status(404).body("User not found.");
-        }
-        if (product.isEmpty()) {
+        if (productOpt.isEmpty()) {
             return ResponseEntity.status(404).body("Product not found.");
         }
 
-        Cart cart = cartRepository.findByUser(user.get()).orElseGet(() -> {
+        Product product = productOpt.get();
+        Cart cart = cartRepository.findByUser(user).orElseGet(() -> {
             Cart newCart = new Cart();
-            newCart.setUser(user.get());
+            newCart.setUser(user);
             newCart.setCartTotal(0.0);
             return cartRepository.save(newCart);
         });
 
-        Optional<CartItem> existingCartItem = cartItemRepository.findByCartAndProduct(cart, product.get());
+        Optional<CartItem> existingCartItem = cartItemRepository.findByCartAndProduct(cart, product);
         if (existingCartItem.isPresent()) {
             CartItem cartItem = existingCartItem.get();
             cartItem.setQuantity(cartItem.getQuantity() + quantity);
@@ -112,99 +108,71 @@ public class CartService {
         } else {
             CartItem cartItem = new CartItem();
             cartItem.setCart(cart);
-            cartItem.setProduct(product.get());
+            cartItem.setProduct(product);
             cartItem.setQuantity(quantity);
-            cartItem.setProductPrice(product.get().getPrice() * quantity);
+            cartItem.setProductPrice(product.getPrice() * quantity);
             cartItemRepository.save(cartItem);
         }
 
-        double newTotal = cartItemRepository.findByCart(cart).stream()
-                .mapToDouble(CartItem::getProductPrice)
-                .sum();
-        cart.setCartTotal(newTotal);
-        cartRepository.save(cart);
-
-        return ResponseEntity.ok("Product added to cart. New cart total: " + newTotal);
+        updateCartTotal(cart);
+        return ResponseEntity.ok("Product added to cart.");
     }
 
-    // Update Cart Item Quantity
-    public ResponseEntity<?> updateCartItem(Long itemId, int newQuantity, String userEmail) {
-        Optional<User> user = userRepository.findByEmail(userEmail);
-        if (user.isEmpty()) {
-            return ResponseEntity.status(404).body("User not found.");
-        }
+    // ✅ Update Cart Item Quantity
+    public ResponseEntity<?> updateCartItem(Long itemId, int newQuantity) {
+        User user = getAuthenticatedUser();
+        Optional<CartItem> cartItemOpt = cartItemRepository.findById(itemId);
 
-        Optional<CartItem> cartItem = cartItemRepository.findById(itemId);
-        if (cartItem.isEmpty()) {
+        if (cartItemOpt.isEmpty()) {
             return ResponseEntity.status(404).body("Cart item not found.");
         }
 
-        CartItem item = cartItem.get();
+        CartItem cartItem = cartItemOpt.get();
+        Cart cart = cartItem.getCart();
+
         if (newQuantity <= 0) {
-            return removeItemFromCart(itemId, userEmail);
+            cartItemRepository.delete(cartItem);
+        } else {
+            cartItem.setQuantity(newQuantity);
+            cartItem.setProductPrice(cartItem.getProduct().getPrice() * newQuantity);
+            cartItemRepository.save(cartItem);
         }
 
-        item.setQuantity(newQuantity);
-        item.setProductPrice(item.getProduct().getPrice() * newQuantity);
-        cartItemRepository.save(item);
-
-        Cart cart = item.getCart();
-        double newTotal = cartItemRepository.findByCart(cart).stream()
-                .mapToDouble(CartItem::getProductPrice)
-                .sum();
-        cart.setCartTotal(newTotal);
-        cartRepository.save(cart);
-
-        return ResponseEntity.ok("Cart item updated. New cart total: " + newTotal);
+        updateCartTotal(cart);
+        return ResponseEntity.ok("Cart item updated.");
     }
 
-    // Remove an Item from Cart
-    public ResponseEntity<?> removeItemFromCart(Long itemId, String userEmail) {
-        Optional<User> user = userRepository.findByEmail(userEmail);
-        if (user.isEmpty()) {
-            return ResponseEntity.status(404).body("User not found.");
-        }
+    // ✅ Remove Item from Cart
+    public ResponseEntity<?> removeItemFromCart(Long itemId) {
+        User user = getAuthenticatedUser();
+        Optional<CartItem> cartItemOpt = cartItemRepository.findById(itemId);
 
-        Optional<CartItem> cartItem = cartItemRepository.findById(itemId);
-        if (cartItem.isEmpty()) {
+        if (cartItemOpt.isEmpty()) {
             return ResponseEntity.status(404).body("Cart item not found.");
         }
 
-        Cart cart = cartItem.get().getCart();
-        cartItemRepository.delete(cartItem.get());
+        CartItem cartItem = cartItemOpt.get();
+        Cart cart = cartItem.getCart();
+        cartItemRepository.delete(cartItem);
 
-        double newTotal = cartItemRepository.findByCart(cart).stream()
-                .mapToDouble(CartItem::getProductPrice)
-                .sum();
-        cart.setCartTotal(newTotal);
-        cartRepository.save(cart);
-
-        return ResponseEntity.ok("Item removed from cart. New cart total: " + newTotal);
+        updateCartTotal(cart);
+        return ResponseEntity.ok("Item removed from cart.");
     }
 
-    // Checkout
+    // ✅ Checkout
     @Transactional
-    public ResponseEntity<String> checkout(String userEmail) {
-        Optional<User> user = userRepository.findByEmail(userEmail);
-        if (user.isEmpty()) {
-            return ResponseEntity.status(404).body("User not found.");
-        }
+    public ResponseEntity<String> checkout() {
+        User user = getAuthenticatedUser();
+        Optional<Cart> cartOpt = cartRepository.findByUser(user);
 
-        Cart cart = cartRepository.findByUser(user.get()).orElse(null);
-        if (cart == null || cart.getCartItems().isEmpty()) {
+        if (cartOpt.isEmpty() || cartOpt.get().getCartItems().isEmpty()) {
             return ResponseEntity.status(400).body("Cart is empty.");
         }
 
-        // ✅ Use Instant.now() for timestamps
-        Order newOrder = new Order(
-                "PAYMENT_PENDING",
-                cart.getCartTotal(),
-                user.get()
-        );
+        Cart cart = cartOpt.get();
+        Order newOrder = new Order("PAYMENT_PENDING", cart.getCartTotal(), user);
+        Order savedOrder = orderRepository.save(newOrder);
 
-        final Order savedOrder = orderRepository.save(newOrder);
-
-        // ✅ Save order items
         List<OrderItem> orderItems = cart.getCartItems().stream().map(cartItem -> {
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(savedOrder);
@@ -216,11 +184,19 @@ public class CartService {
 
         orderItemRepository.saveAll(orderItems);
 
-        // ✅ Clear the cart
         cartItemRepository.deleteAll(cart.getCartItems());
         cart.setCartTotal(0.0);
         cartRepository.save(cart);
 
         return ResponseEntity.ok("Order created! Order ID: " + savedOrder.getOrderId() + ". Please complete the payment.");
+    }
+
+    // ✅ Helper: Update Cart Total
+    private void updateCartTotal(Cart cart) {
+        double newTotal = cartItemRepository.findByCart(cart).stream()
+                .mapToDouble(CartItem::getProductPrice)
+                .sum();
+        cart.setCartTotal(newTotal);
+        cartRepository.save(cart);
     }
 }
