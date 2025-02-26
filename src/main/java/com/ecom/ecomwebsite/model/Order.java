@@ -2,9 +2,10 @@ package com.ecom.ecomwebsite.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
-import java.sql.Date;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Data
@@ -17,7 +18,8 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long orderId;
 
-    private Date orderDate;
+    @Column(updatable = false)
+    private Instant orderDate; // Allow null initially
 
     @Column(nullable = false)
     private String status; // PAYMENT_PENDING, CONFIRMED, SHIPPED, DELIVERED
@@ -34,30 +36,35 @@ public class Order {
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private Payment payment;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @CreationTimestamp
+    @Column(updatable = false)
+    private Instant createdAt; // Allow null initially
 
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
+    @UpdateTimestamp
+    private Instant updatedAt; // Allow null initially
 
-    // ✅ Custom Constructor to Fix the Issue
-    public Order(Date orderDate, String status, double orderAmount, User user) {
-        this.orderDate = orderDate;
+    // ✅ Automatically set timestamps ONLY when order is created
+    @PrePersist
+    protected void onCreate() {
+        if (orderDate == null) {
+            orderDate = Instant.now(); // Set order date only if null
+        }
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+        updatedAt = Instant.now();
+    }
+
+    // ✅ Only update updatedAt when the order is modified
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = Instant.now();
+    }
+
+    // ✅ Constructor without timestamps
+    public Order(String status, double orderAmount, User user) {
         this.status = status;
         this.orderAmount = orderAmount;
         this.user = user;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

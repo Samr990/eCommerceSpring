@@ -9,6 +9,8 @@ import com.ecom.ecomwebsite.model.User;
 import com.ecom.ecomwebsite.repository.CategoryRepository;
 import com.ecom.ecomwebsite.repository.UserRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -26,7 +28,7 @@ public class CategoryService {
         this.userRepository = userRepository;
     }
 
-    // Convert Category Entity to DTO (Includes Products)
+    // 🔹 Convert Category Entity to DTO (Includes Products)
     private CategoryDTO convertToDTO(Category category) {
         CategoryDTO dto = new CategoryDTO();
         dto.setCategoryId(category.getCategoryId());
@@ -41,16 +43,16 @@ public class CategoryService {
         return dto;
     }
 
-    // Convert Product Entity to ProductDTO
+    // 🔹 Convert Product Entity to ProductDTO
     private ProductDTO convertToProductDTO(Product product) {
         ProductDTO dto = new ProductDTO();
-        dto.setProductId(product.getProductId());  // ✅ Ensure productId is set
+        dto.setProductId(product.getProductId());
         dto.setName(product.getName());
         dto.setDescription(product.getDescription());
         dto.setPrice(product.getPrice());
         dto.setQuantity(product.getQuantity());
-        
-        // ✅ Fix: Set categoryId from product's category
+
+        // ✅ Ensure categoryId is set
         if (product.getCategory() != null) {
             dto.setCategoryId(product.getCategory().getCategoryId());
         }
@@ -58,7 +60,7 @@ public class CategoryService {
         return dto;
     }
 
-    // ✅ Fetch all categories (Optionally includes products)
+    // ✅ Fetch all categories (Public)
     public List<CategoryDTO> getAllCategories() {
         return categoryRepository.findAll()
                 .stream()
@@ -66,23 +68,22 @@ public class CategoryService {
                 .collect(Collectors.toList());
     }
 
-    // ✅ Fetch a single category by ID (Includes Products in Category)
+    // ✅ Fetch a single category by ID (Public)
     public ResponseEntity<?> getCategoryById(Long id) {
         Optional<Category> category = categoryRepository.findById(id);
-        
+
         if (category.isPresent()) {
-            CategoryDTO categoryDTO = convertToDTO(category.get());
-            return ResponseEntity.ok(categoryDTO);
+            return ResponseEntity.ok(convertToDTO(category.get()));
         } else {
             return ResponseEntity.status(404).body("Category not found with ID: " + id);
         }
     }
 
     // ✅ Create a New Category (Admin Only)
-    public ResponseEntity<String> createCategory(CategoryDTO categoryDTO, String adminEmail) {
-        Optional<User> adminUser = userRepository.findByEmail(adminEmail);
-        
-        if (adminUser.isEmpty() || adminUser.get().getRole() != RoleType.ADMIN) {
+    public ResponseEntity<String> createCategory(CategoryDTO categoryDTO) {
+        User adminUser = getAuthenticatedUser();
+
+        if (adminUser.getRole() != RoleType.ADMIN) {
             return ResponseEntity.status(403).body("Access Denied: Only Admins can create categories.");
         }
 
@@ -93,11 +94,11 @@ public class CategoryService {
         return ResponseEntity.ok("Category created successfully.");
     }
 
-    // ✅ Update Category (Admin Only)
-    public ResponseEntity<String> updateCategory(Long categoryId, CategoryDTO categoryDTO, String adminEmail) {
-        Optional<User> adminUser = userRepository.findByEmail(adminEmail);
-        
-        if (adminUser.isEmpty() || adminUser.get().getRole() != RoleType.ADMIN) {
+    // ✅ Update a Category (Admin Only)
+    public ResponseEntity<String> updateCategory(Long categoryId, CategoryDTO categoryDTO) {
+        User adminUser = getAuthenticatedUser();
+
+        if (adminUser.getRole() != RoleType.ADMIN) {
             return ResponseEntity.status(403).body("Access Denied: Only Admins can update categories.");
         }
 
@@ -113,11 +114,11 @@ public class CategoryService {
         return ResponseEntity.ok("Category updated successfully.");
     }
 
-    // ✅ Delete Category (Admin Only)
-    public ResponseEntity<String> deleteCategory(Long categoryId, String adminEmail) {
-        Optional<User> adminUser = userRepository.findByEmail(adminEmail);
+    // ✅ Delete a Category (Admin Only)
+    public ResponseEntity<String> deleteCategory(Long categoryId) {
+        User adminUser = getAuthenticatedUser();
 
-        if (adminUser.isEmpty() || adminUser.get().getRole() != RoleType.ADMIN) {
+        if (adminUser.getRole() != RoleType.ADMIN) {
             return ResponseEntity.status(403).body("Access Denied: Only Admins can delete categories.");
         }
 
@@ -128,5 +129,14 @@ public class CategoryService {
 
         categoryRepository.delete(existingCategory.get());
         return ResponseEntity.ok("Category deleted successfully.");
+    }
+
+    // ✅ Get the currently authenticated user
+    private User getAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String email = authentication.getName();
+        
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found: " + email));
     }
 }

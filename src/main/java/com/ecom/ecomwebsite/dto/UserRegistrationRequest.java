@@ -9,7 +9,10 @@ import lombok.Setter;
 @Getter
 @Setter
 public class UserRegistrationRequest {
-	private User user;
+	 private String email;
+	    private String password;
+	    private String userName;
+	    private String address;
     private RoleType role;
 
 }

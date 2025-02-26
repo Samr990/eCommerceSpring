@@ -34,7 +34,7 @@ public class ProductDTO {
 	}
 	public void setQuantity(int quantity) {
 		this.quantity = quantity;
-	}
+	} 
 	public Long getCategoryId() {
 		return categoryId;
 	}

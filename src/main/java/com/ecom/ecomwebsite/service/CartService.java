@@ -6,6 +6,7 @@ import com.ecom.ecomwebsite.model.*;
 import com.ecom.ecomwebsite.repository.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Date;
 import java.time.LocalDate;
@@ -182,6 +183,7 @@ public class CartService {
     }
 
     // Checkout
+    @Transactional
     public ResponseEntity<String> checkout(String userEmail) {
         Optional<User> user = userRepository.findByEmail(userEmail);
         if (user.isEmpty()) {
@@ -193,13 +195,16 @@ public class CartService {
             return ResponseEntity.status(400).body("Cart is empty.");
         }
 
-        final Order savedOrder = orderRepository.save(new Order(
-                Date.valueOf(LocalDate.now()), 
-                "PAYMENT_PENDING", 
-                cart.getCartTotal(), 
+        // ✅ Use Instant.now() for timestamps
+        Order newOrder = new Order(
+                "PAYMENT_PENDING",
+                cart.getCartTotal(),
                 user.get()
-        ));
+        );
 
+        final Order savedOrder = orderRepository.save(newOrder);
+
+        // ✅ Save order items
         List<OrderItem> orderItems = cart.getCartItems().stream().map(cartItem -> {
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(savedOrder);
@@ -211,6 +216,7 @@ public class CartService {
 
         orderItemRepository.saveAll(orderItems);
 
+        // ✅ Clear the cart
         cartItemRepository.deleteAll(cart.getCartItems());
         cart.setCartTotal(0.0);
         cartRepository.save(cart);
